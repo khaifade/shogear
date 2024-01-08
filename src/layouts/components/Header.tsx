@@ -11,9 +11,11 @@ import Login from './auth-forms/Login';
 import Signup from './auth-forms/Signup';
 import { useUserContext } from '../../utils/authContext';
 import apiRequest from '../../services/request';
-import { debounce } from 'lodash';
 import HeadlessTippy from '../../components/HeadlessTippy';
-
+import toHyphenString from '../../lib/toHyphenString';
+import { PostItem } from '../../pages/ProductDetail';
+import { useDebounce } from '../../app/hook';
+import { MdOutlineImageSearch } from 'react-icons/md';
 type InitialSearchState = {
     isSearching: boolean;
     query: string;
@@ -29,16 +31,12 @@ const Header = () => {
     // const cartQuantity = useSelector((state: RootState) => state.cart.quantityTotal);
     // console.log(cartQuantity);
     const listActions = [
-        {
-            icon: Icons.headphone,
-            name1: 'Hotline',
-            name2: '1800.6975',
-        },
-        {
-            icon: Icons.showroom,
-            name1: 'Hệ thống',
-            name2: 'Showroom',
-        },
+        // {
+        //     icon: Icons.imageSearch,
+        //     name1: 'Tìm kiếm',
+        //     name2: 'hình ảnh',
+        //     to: '/search',
+        // },
         {
             icon: Icons.order,
             name1: 'Tra cứu',
@@ -57,40 +55,20 @@ const Header = () => {
         query: '',
     });
     // TODO: call query API  --> search result
-    type Post = {
-        id: number;
-        imageUrl: string;
-        heading: string;
-        price: number;
-    };
-    const [posts, setPosts] = useState<Post[]>([]);
-    const debouncedSearch = debounce((query: string) => {
-        apiRequest.get(`/products/?q=${query}`).then((response) => {
-            const datas: Post[] = [];
-            for (const post of response.data.results) {
-                const data: Post = {
-                    id: post.id,
-                    imageUrl: 'https://picsum.photos/200',
-                    heading: post.name,
-                    price: post.price,
-                };
-                datas.push(data);
-            }
-            setPosts(() => {
-                return [...datas];
-            });
-        });
-    }, 500); // delay of 500ms
-
+    const [posts, setPosts] = useState<PostItem[]>([]);
+    const debounceQuery = useDebounce<string>(search.query, 300);
+    const [isLoading, setIsLoading] = useState(false);
     useLayoutEffect(() => {
-        if (search.query) {
-            debouncedSearch(search.query);
-        }
-    }, [search.query]);
+        setIsLoading(true);
+        apiRequest.get(`/posts/?q=${debounceQuery}`).then((response) => {
+            setIsLoading(false);
+            const results: PostItem[] = response.data.results;
+            setPosts(results);
+        });
+    }, [debounceQuery]);
 
     const { getUser, logOut } = useUserContext();
     const user = getUser();
-    console.log(user);
     function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
         if (e.target.value.startsWith(' ')) return;
         setSearch((prev) => ({ ...prev, query: e.target.value, isSearching: !!e.target.value }));
@@ -98,6 +76,7 @@ const Header = () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function handleSearch(e: any, type: 'click' | 'enter') {
+        if (posts.length === 0) return;
         if (e.key === 'Enter' || type === 'click') {
             const query = search.query.trim().replace(/\s+/g, ' ');
             setSearchParams({ q: query });
@@ -107,7 +86,6 @@ const Header = () => {
     }
     function handleDialog() {
         const modalElement = document.getElementById('modal_login') as HTMLDialogElement | null;
-        console.log(user);
         if (!user) modalElement?.showModal();
         setIsLoginModal(true);
     }
@@ -115,7 +93,9 @@ const Header = () => {
     const handleLoginModal = () => {
         setIsLoginModal(!isLoginModal);
     };
-
+    const handleSearchByImage = () => {
+        navigate('/search', { state: { image: true } });
+    };
     return (
         <header className='relative z-50 justify-center bg-primary-default'>
             <div className='mx-auto my-auto flex justify-center bg-primary-default px-4 py-3 lg:mx-auto lg:max-w-[1200px] xl:px-0'>
@@ -138,7 +118,9 @@ const Header = () => {
                             className='font-italic z-10 h-full w-full rounded-sm rounded-bl-none border-none pl-4 font-sf text-base text-placeholder outline-none placeholder:text-placeholder'
                             placeholder='Bạn cần tìm gì?'
                             onFocus={() => setSearch((prev) => ({ ...prev, isSearching: !!prev.query }))}
-                            onBlur={() => setSearch((prev) => ({ ...prev, isSearching: false }))}
+                            onBlur={() => {
+                                setTimeout(() => setSearch((prev) => ({ ...prev, isSearching: false })), 200);
+                            }}
                             onChange={(e) => handleChange(e)}
                             onKeyDown={(e) => handleSearch(e, 'enter')}
                             value={search.query}
@@ -151,29 +133,81 @@ const Header = () => {
                         <img src={Icons.search} alt='search' className='h-4 w-4' />
                     </div>
                     {!!search.isSearching && (
-                        <div className='smart-search-wrapper custom-scrollbar'>
-                            {posts.map((item, index) => (
-                                <React.Fragment key={index}>
-                                    <div className='  flex cursor-pointer items-center justify-between gap-2 hover:bg-gray-100'>
-                                        <div className='ml-4'>
-                                            <h3 className='line-clamp-1'>{item.heading}</h3>
-                                            <p>
-                                                <span className='price mr-2 '>{numberWithCommas(item.price)} </span>•{' '}
-                                                {/* <span className='ml-2'>{item.zone}</span> */}
-                                            </p>
-                                        </div>
-                                        <div className='mr-2 p-2'>
-                                            <img src={item.imageUrl} alt='' className='h-16 w-16 object-cover' />
-                                        </div>
-                                    </div>
-                                    <div className='divider m-0 ml-2 h-0 w-[calc(100%-24px)] text-center after:h-[1px]'></div>
-                                </React.Fragment>
-                            ))}
+                        <div
+                            className='smart-search-wrapper custom-scrollbar'
+                            onBlur={() => setSearch((prev) => ({ ...prev, isSearching: false }))}
+                        >
+                            {isLoading && (
+                                <div className='flex items-center justify-center'>
+                                    <span className='loading loading-dots loading-md'></span>
+                                </div>
+                            )}
+                            {posts.length > 0 && !isLoading
+                                ? posts.map((item, index) => (
+                                      <React.Fragment key={index}>
+                                          <Link
+                                              to={`/products/${toHyphenString(item.product.name)}`}
+                                              state={{ item }}
+                                              className='  flex cursor-pointer items-center justify-between gap-2 hover:bg-gray-100'
+                                          >
+                                              <div className='ml-4 '>
+                                                  <h3 className='line-clamp-1'>
+                                                      {item.product.name.split('').map((char, index) => (
+                                                          <span
+                                                              key={index}
+                                                              className={
+                                                                  search.query
+                                                                      .toLowerCase()
+                                                                      .includes(char.toLowerCase())
+                                                                      ? ''
+                                                                      : 'font-bold'
+                                                              }
+                                                          >
+                                                              {char}
+                                                          </span>
+                                                      ))}
+                                                  </h3>
+                                                  <p>
+                                                      <span className='price mr-2 '>
+                                                          {numberWithCommas(item.product.price)}{' '}
+                                                      </span>
+                                                      • <span className='ml-2'>{item.zone}</span>
+                                                  </p>
+                                              </div>
+                                              <div className='mr-2 p-2'>
+                                                  <img
+                                                      src={item.product.attachments[0].file}
+                                                      alt=''
+                                                      className='h-16 w-16 object-cover'
+                                                  />
+                                              </div>
+                                          </Link>
+                                          <div className='divider m-0 ml-2 h-0 w-[calc(100%-24px)] text-center after:h-[1px]'></div>
+                                      </React.Fragment>
+                                  ))
+                                : !isLoading && (
+                                      <div className='flex items-center justify-center p-4'>
+                                          <p className='text-sm text-gray-400'>Không tìm thấy kết quả</p>
+                                      </div>
+                                  )}
                         </div>
                     )}
                 </div>
                 <div className='actions ml-3 flex w-auto align-bottom'>
                     <div className='flex items-center justify-between gap-2 '>
+                        <div
+                            className=' tooltip tooltip-bottom tooltip-warning flex items-center justify-center '
+                            data-tip='Tìm kiếm bằng hình ảnh'
+                        >
+                            <Button
+                                variant={'fill'}
+                                size={'medium'}
+                                className='bg-gradient-to-r from-indigo-300 to-purple-400 text-3xl'
+                                onClick={handleSearchByImage}
+                            >
+                                <MdOutlineImageSearch />
+                            </Button>
+                        </div>
                         {listActions.map((item, index) => {
                             return (
                                 <React.Fragment key={index}>
